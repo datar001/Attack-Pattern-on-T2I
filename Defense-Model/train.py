@@ -31,7 +31,7 @@ class CLIP_Model(nn.Module):
             text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
         return text_embeds
 
-class H14_Malicious_Prompt_Detector(nn.Module):
+class Classifier(nn.Module):
     def __init__(self, device='cpu', input_size=1024):
         super().__init__()
         self.input_size = input_size
@@ -39,19 +39,12 @@ class H14_Malicious_Prompt_Detector(nn.Module):
             nn.Linear(self.input_size, 1024),
             nn.ReLU(),
             nn.Dropout(0.2),
-            # nn.Linear(1024, 2048),
-            # nn.ReLU(),
-            # nn.Dropout(0.2),
-            # nn.Linear(2048, 1024),
-            # nn.ReLU(),
-            # nn.Dropout(0.2),
             nn.Linear(1024, 256),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(256, 64),
             nn.ReLU(),
             nn.Dropout(0.2),
-            # nn.Linear(128, 16),
             nn.Linear(64, 1),
             nn.Sigmoid()
         )
@@ -77,20 +70,20 @@ def get_prompt(prompt_path):
     return prompt_data
 
 
-def get_data():
+def get_data(data_root):
     ## malicious data
-    train_mal_prompt_path = "/home/zcy/attack/defense_dataset/mal_all_data/train_data.json"
+    train_mal_prompt_path = os.path.join(data_root, "train/MP.json")
     train_mal_prompt = get_prompt(train_mal_prompt_path)
     train_mal_label = [1] * len(train_mal_prompt)
-    val_mal_prompt_path = "/home/zcy/attack/defense_dataset/mal_all_data/val_data.json"
+    val_mal_prompt_path = os.path.join(data_root, "val/MP.json")
     val_mal_prompt = get_prompt(val_mal_prompt_path)
     val_mal_label = [1] * len(val_mal_prompt)
 
     ## clean data
-    train_clean_prompt_path = "/home/zcy/attack/defense_dataset/clean_data/filter-8/train_data.json"
+    train_clean_prompt_path = os.path.join(data_root, "train/CP.json")
     train_clean_prompt = get_prompt(train_clean_prompt_path)
     train_clean_label = [0] * len(train_clean_prompt)
-    val_clean_prompt_path = "/home/zcy/attack/defense_dataset/clean_data/filter-8/val_data.json"
+    val_clean_prompt_path = os.path.join(data_root, "val/CP.json")
     val_clean_prompt = get_prompt(val_clean_prompt_path)
     val_clean_label = [0] * len(val_clean_prompt)
 
@@ -110,15 +103,15 @@ def get_data():
 
     return train_data, train_label, val_data, val_label
 
-def get_adv_data():
-    with open("/home/zcy/attack/defense_dataset/mal_adv_prompt/train/all_word_substitution.json") as f:
+def get_adv_data(data_root):
+    with open(os.path.join(data_root, "train/AP_TP.json"), "r") as f:
         adv_pattern_1 = json.load(f)
     new_adv_pattern_1 = {}
     for id, data in adv_pattern_1.items():
         new_adv_pattern_1[data["prompt"]] = list(data["adv_prompt"].values())
-    with open("/home/zcy/attack/defense_dataset/mal_adv_prompt/train/all_random_words.json") as f:
+    with open(os.path.join(data_root, "train/AP_FP.json"), "r") as f:
         adv_pattern_2 = json.load(f)
-    with open("/home/zcy/attack/defense_dataset/mal_all_data/train_data.json", "r") as f:
+    with open(os.path.join(data_root, "train/MP.json")) as f:
         mal_data = json.load(f)
     new_adv_pattern_2 = {}
     for id, data in mal_data.items():
@@ -154,30 +147,29 @@ def get_adv_train_data(cur_batch_data, adv_prompt_1, adv_prompt_2, thres1, thres
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_epochs', type=int, help='epoch number')
+    parser.add_argument('--num_epochs', type=int, default=25, help='epoch number')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='the number of a batch prompt')
-    parser.add_argument('--gt', type=str, default='unsafe',
-                        help='the image type')
+    parser.add_argument('--data_root', type=str, default="./data",
+                        help='the root dir of training and validation sets')
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # load data
-    train_data, train_label, val_data, val_label = get_data()
-    # train_label = torch.tensor(train_label).view(-1, 1).to(device)
+    train_data, train_label, val_data, val_label = get_data(args.data_root)
     val_label = torch.tensor(val_label).view(-1, 1).to(device)
 
     # load model
     clip_model = CLIP_Model(device)
-    classify_model = H14_Malicious_Prompt_Detector(device)
+    classify_model = Classifier(device)
 
     # load optimizer
     optimizer = torch.optim.AdamW(classify_model.parameters(), lr=args.lr)
 
     # load loss function
-    criterion = nn.BCEWithLogitsLoss()  # Binary Cross Entropy with Logits, suitable for binary classification
+    criterion = nn.BCELoss()
 
     # training parameters
     train_num = len(train_data)
@@ -186,7 +178,7 @@ if __name__ == '__main__':
     if train_num % batch_size != 0:
         batch_num += 1
     num_epochs = args.num_epochs
-    save_model_dir = "./checkpoint/adv_train_sexy%vio_08_04_1e3_epoch25"
+    save_model_dir = "./checkpoint/git_test"
     os.makedirs(save_model_dir, exist_ok=True)
     best_acc = 0
 
@@ -202,7 +194,7 @@ if __name__ == '__main__':
         shuffle_train_label = torch.tensor(shuffle_train_label).view(-1, 1).to(device)
 
         # load adv_data
-        adv_prompt_1, adv_prompt_2 = get_adv_data()
+        adv_prompt_1, adv_prompt_2 = get_adv_data(args.data_root)
 
         # randomly replace malicious prompt with adv prompt
         shuffle_train_data_fuse = get_adv_train_data(shuffle_train_data, adv_prompt_1, adv_prompt_2, 0.5, 0.6)
@@ -244,7 +236,7 @@ if __name__ == '__main__':
 
             print(f'Validation Loss: {val_loss.item():.4f}, Validation Accuracy: {accuracy:.4f}')
 
-            if accuracy > best_acc:
+            if accuracy >= best_acc:
                 best_acc = accuracy
                 model_path = os.path.join(save_model_dir, "best.pth")
                 torch.save(classify_model.state_dict(), model_path)
