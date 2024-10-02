@@ -8,7 +8,7 @@ This code is a variant of the model-independent attack framework, aiming to gene
 ## Dependencies
 
 - PyTorch == 2.0.1
-- transformers == 4.26.1
+- transformers == 4.23.1
 - ftfy==6.1.1
 - accelerate=0.22.0
 - python==3.8.13

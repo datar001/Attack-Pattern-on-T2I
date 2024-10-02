@@ -8,21 +8,25 @@ Moreover, our defense model is designed as a plug-in and can be easily integrate
 
 
 
-## Training
+## Dependencies
 
-To train our defense model, we construct an additional training and validation sets. The training set comprising 1,300 clean and malicious prompts, respectively. The validation set contains 470 clean and malicious prompts, respectively.
+- PyTorch == 2.0.1
+- transformers == 4.23.1
+- ftfy==6.1.1
+- accelerate=0.22.0
+- python==3.8.13
 
-The training progress can be started as follows:
 
-```python
-python git_train.py --data_root ./data/ --batch_size 64 --num_epochs 25 --lr 1e-3
-```
+
+## Checkpoint
 
 We public our trained checkpoint in the folder~(./checkpoint). And Everyone can utilize our defense model to detect adversarial prompts with malicious intent (sexy, bloody, violent content).
 
 
 
 ## Testing
+
+### One example test
 
 We provide a testing example about our defense model:
 
@@ -36,3 +40,14 @@ The corresponding output is:
 the probability of input prompt having maliciousness is 1.0
 ```
 
+
+
+### Dataset evaluation
+
+We also provide an evaluation file to reproduce the defense performance presented in the manuscript.
+
+```python
+python eval.py --checkpoint ./checkpoint/best.pth
+```
+
+The result will be saved in the `result.csv`
