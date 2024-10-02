@@ -9,10 +9,12 @@ from modified_clip import Modified_ClipModel
 from synonym import Synonym
 import pdb
 
+
 def write_log(file, text, print_console=True):
     file.write(text + "\n")
     if print_console:
         print(text)
+
 
 def save_top_k_results(outputdir, ori_prompt, prompt_topk):
     save_file = open(os.path.join(outputdir, ori_prompt + '.txt'), "w")
@@ -24,6 +26,7 @@ def save_top_k_results(outputdir, ori_prompt, prompt_topk):
         write_log(save_file, "sim: {:.3f}, mse: {:.3f}".format(sim, mse), print_console)
         write_log(save_file, "prompt: {}".format(prompt), print_console)
         write_log(save_file, "token: {}".format(token), print_console)
+
 
 if __name__ == "__main__":
 
@@ -37,14 +40,6 @@ if __name__ == "__main__":
 
     # output logger setting
     output_dir = args.output_dir
-    if os.path.exists(output_dir):
-        replace_type = input("The output path has existed, replace all? (yes/no) ")
-        if replace_type == "no":
-            exit()
-        elif replace_type == "yes":
-            pass
-        else:
-            raise ValueError("Answer must be yes or no")
     os.makedirs(output_dir, exist_ok=True)
 
     # load CLIP model
@@ -67,15 +62,15 @@ if __name__ == "__main__":
     forbidden_words = [words.strip().split(',') for words in forbidden_words]
 
     assert len(attack_targets) == len(forbidden_words), "The number of target goals must equal to the number " \
-                                                      f"of forbidden words, but get {len(attack_targets)} target goals " \
-                                                      f"and {len(forbidden_words)} forbidden words"
+                                                        f"of forbidden words, but get {len(attack_targets)} target goals " \
+                                                        f"and {len(forbidden_words)} forbidden words"
 
     # load imagenet-mini label -- the category of clean prompts
     object_path = r"./mini_100.txt"
     with open(object_path, "r") as f:
         objects = f.readlines()
     objects = [obj.strip() for obj in objects]
-        
+
     # load clean prompts
     with open(args.prompt_path, 'r') as f:
         clean_prompts = f.readlines()
@@ -84,7 +79,6 @@ if __name__ == "__main__":
     for cur_forbidden_words, goal_path in zip(forbidden_words, attack_targets):
         attack_tgt = goal_path.split('/')[-1]
         print('\n\tStart to train a new attack target: {}\n'.format(attack_tgt))
-
         # load the targeted image
         orig_images = [Image.open(os.path.join(goal_path, image_name)) for image_name in os.listdir(goal_path)]
         cur_output_dir = os.path.join(output_dir, attack_tgt)
@@ -126,23 +120,23 @@ if __name__ == "__main__":
 
             write_log(writer_logger, "Start to train {}^th object: {}, "
                                      "attack target: {},  \n the input prompt: {}".format(
-                                    i, ori_object, attack_tgt,
-                                    ori_prompt + ' ' + ' '.join(["<|startoftext|>"] * args.add_suffix_num)))
+                i, ori_object, attack_tgt,
+                ori_prompt + ' ' + ' '.join(["<|startoftext|>"] * args.add_suffix_num)))
 
             assert ori_object in ori_prompt, "Not match the ori object and the input prompt"
             learned_prompt, best_sim, prompt_topk = optimize_prompt(
-                                                        model, preprocess, tokenizer, args, device,
-                                                        ori_prompt=ori_prompt,
-                                                        target_images=orig_images, forbidden_words=cur_forbidden_words,
-                                                        suffix_num=args.add_suffix_num,
-                                                        only_english_words=True)
+                model, preprocess, tokenizer, args, device,
+                ori_prompt=ori_prompt,
+                target_images=orig_images, forbidden_words=cur_forbidden_words,
+                suffix_num=args.add_suffix_num,
+                only_english_words=True)
             end_time = time.time()
             write_log(writer_logger, "The final prompt is {}".format(learned_prompt))
             write_log(writer_logger, "The best sim is {:.3f}".format(best_sim))
-            write_log(writer_logger, "Spent time: {:.3f}s".format(end_time-start_time))
+            write_log(writer_logger, "Spent time: {:.3f}s".format(end_time - start_time))
             save_top_k_results(topk_prompt_dir, ori_prompt, prompt_topk)
             writer_result.write(learned_prompt + "\n")
         finish_time = time.time()
         all_time = finish_time - init_time
         write_log(writer_logger, "Cong!! Finish the experiment of {}, spent time is {}h{}m".format(
-            attack_tgt, all_time//3600, (all_time%3600)//60))
+            attack_tgt, all_time // 3600, (all_time % 3600) // 60))

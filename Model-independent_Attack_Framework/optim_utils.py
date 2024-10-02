@@ -8,6 +8,7 @@ import torch
 from synonym import is_english, get_token_english_mask
 import pdb
 
+
 def read_json(filename: str) -> Mapping[str, Any]:
     """Returns a Python dict representation of JSON object at input file."""
     with open(filename) as fp:
@@ -16,10 +17,10 @@ def read_json(filename: str) -> Mapping[str, Any]:
 
 def nn_project(curr_embeds, embedding_layer, forbidden_mask=None, forbidden_set=None, english_mask=None):
     with torch.no_grad():
-        bsz,seq_len,emb_dim = curr_embeds.shape
+        bsz, seq_len, emb_dim = curr_embeds.shape
 
-        curr_embeds = curr_embeds.reshape((-1,emb_dim))
-        curr_embeds = curr_embeds / curr_embeds.norm(dim=1, keepdim=True) # queries
+        curr_embeds = curr_embeds.reshape((-1, emb_dim))
+        curr_embeds = curr_embeds / curr_embeds.norm(dim=1, keepdim=True)  # queries
 
         embedding_matrix = embedding_layer.weight
         embedding_matrix = embedding_matrix / embedding_matrix.norm(dim=1, keepdim=True)
@@ -35,12 +36,13 @@ def nn_project(curr_embeds, embedding_layer, forbidden_mask=None, forbidden_set=
         if english_mask is not None:
             sims[:, english_mask] = -1e+8
 
-        cos_scores_top_k_values, cos_scores_top_k_idx = torch.topk(sims, max(1, forbidden_num+1), dim=1, largest=True, sorted=False)  #
+        cos_scores_top_k_values, cos_scores_top_k_idx = torch.topk(sims, max(1, forbidden_num + 1), dim=1, largest=True,
+                                                                   sorted=False)  #
         queries_result_list = []
         for idx in range(seq_len):
             cur_query_idx_topk = sorted([[top_k_id.item(), top_k_value.item()] for top_k_id, top_k_value in
                                          zip(cos_scores_top_k_idx[idx], cos_scores_top_k_values[idx])],
-                                        key=lambda x:x[1], reverse=True)
+                                        key=lambda x: x[1], reverse=True)
             for token_id, sim_value in cur_query_idx_topk:
                 if token_id not in forbidden_set:
                     queries_result_list.append(token_id)
@@ -52,8 +54,8 @@ def nn_project(curr_embeds, embedding_layer, forbidden_mask=None, forbidden_set=
 
     return projected_embeds, nn_indices
 
-def forbidden_mask(forbidden_words, tokenizer, device):
 
+def forbidden_mask(forbidden_words, tokenizer, device):
     mask = torch.zeros(len(tokenizer.encoder)).bool().to(device)
     squeeze_forbidden = set()
     if forbidden_words is not None:
@@ -101,8 +103,8 @@ def get_target_feature(model, preprocess, tokenizer, device, target_images=None,
             all_target_features = all_target_features / all_target_features.norm(p=2, dim=-1, keepdim=True)
     return all_target_features
 
-def get_id(prompt, suffix_num, tokenizer, device, token_embedding):
 
+def get_id(prompt, suffix_num, tokenizer, device, token_embedding):
     dummy_ids = [tokenizer._convert_token_to_id(token) for token in tokenizer._tokenize(prompt)]
     prompt_len = len(dummy_ids)
     assert prompt_len + suffix_num < 76, "opti_num + len(prompt) must < 77"
@@ -134,7 +136,7 @@ def get_id(prompt, suffix_num, tokenizer, device, token_embedding):
 def optimize_prompt_loop(model, tokenizer, all_target_features,
                          args, device, ori_prompt=None, forbidden_words=None,
                          suffix_num=10, english_mask=None,
-                         ori_feature=None, writer=None):
+                         writer=None):
     assert ori_prompt is not None
     opt_iters = args.iter
     lr = args.lr
@@ -146,20 +148,20 @@ def optimize_prompt_loop(model, tokenizer, all_target_features,
     save_prompts = []
     top_k_sim_min = 0.
 
-
     token_embedding = model.text_model.embeddings.token_embedding
 
     # refiner the search space
     forbidden_mask_, squeeze_forbidden = forbidden_mask(forbidden_words, tokenizer, device)
 
     # initialize adversarial prompt
-    prompt_embeds, dummy_embeds, dummy_ids, max_char_num = get_id(ori_prompt, suffix_num, tokenizer, device, token_embedding)
+    prompt_embeds, dummy_embeds, dummy_ids, max_char_num = get_id(ori_prompt, suffix_num, tokenizer, device,
+                                                                  token_embedding)
     p_bs, p_len, p_dim = prompt_embeds.shape
 
     # get optimizer
     input_optimizer = torch.optim.AdamW([prompt_embeds], lr=lr, weight_decay=weight_decay)
 
-    best_sim = -1000 * args.loss_weight
+    best_sim = -1000
     best_text = ""
 
     for step in range(opt_iters):
@@ -169,8 +171,7 @@ def optimize_prompt_loop(model, tokenizer, all_target_features,
         else:
             curr_indx = torch.randperm(len(all_target_features))
             target_features = all_target_features[curr_indx][0:batch_size]
-            
-        
+
         # forward projection
         projected_embeds, nn_indices = nn_project(prompt_embeds, token_embedding,
                                                   forbidden_mask=forbidden_mask_, english_mask=english_mask,
@@ -183,33 +184,31 @@ def optimize_prompt_loop(model, tokenizer, all_target_features,
             padded_embeds[dummy_ids == -1] = projected_embeds.reshape(-1, p_dim)
             logits_per_image, _, mse_loss = model.forward_text_embedding(padded_embeds,
                                                                          dummy_ids,
-                                                                         target_features,
-                                                                         ori_feature=ori_feature)
+                                                                         target_features)
             scores_per_prompt = logits_per_image.mean(dim=0)
             universal_cosim_score = scores_per_prompt.max().item()  # max
             best_indx = scores_per_prompt.argmax().item()
-        
+
         # tmp_embeds = copy.deepcopy(prompt_embeds)
         tmp_embeds = prompt_embeds.detach().clone()
         tmp_embeds.data = projected_embeds.data
         tmp_embeds.requires_grad = True
-        
+
         # padding
         # padded_embeds = copy.deepcopy(dummy_embeds)
         padded_embeds = dummy_embeds.detach().clone()
         padded_embeds[dummy_ids == -1] = tmp_embeds.reshape(-1, p_dim)
-        
+
         logits_per_image, _, mse_loss = model.forward_text_embedding(padded_embeds,
                                                                      dummy_ids,
-                                                                     target_features,
-                                                                     ori_feature=ori_feature)
+                                                                     target_features)
         cosim_scores = logits_per_image
         loss = 1 - cosim_scores.mean()
         if writer is not None:
             writer.add_scalar('loss', loss.item(), step)
-        
+
         prompt_embeds.grad, = torch.autograd.grad(loss, [tmp_embeds])
-        
+
         input_optimizer.step()
         input_optimizer.zero_grad()
 
@@ -225,38 +224,32 @@ def optimize_prompt_loop(model, tokenizer, all_target_features,
         # save top k prompt
         if cosim_scores >= top_k_sim_min and decoded_text not in save_prompts:
             prompt_topk[0] = [cosim_scores, mse_loss.item(), decoded_text, decoded_token]
-            prompt_topk = sorted(prompt_topk, key=lambda x:x[0])
+            prompt_topk = sorted(prompt_topk, key=lambda x: x[0])
             top_k_sim_min = prompt_topk[0][0]
             save_prompts.append(decoded_text)
 
-        if print_step is not None and (step % print_step == 0 or step == opt_iters-1):
+        if print_step is not None and (step % print_step == 0 or step == opt_iters - 1):
             per_step_message = f"step: {step}, lr: {curr_lr}"
             per_step_message = f"\n{per_step_message}, " \
                                f"mse: {mse_loss.item():.3f}, " \
                                f"cosim: {cosim_scores:.3f}," \
                                f" text: {decoded_text}, " \
-                                f"token: {decoded_token}"
+                               f"token: {decoded_token}"
             print(per_step_message)
 
-        if best_sim * args.loss_weight < cosim_scores * args.loss_weight:
+        if best_sim < cosim_scores:
             best_sim = cosim_scores
             best_text = decoded_text
 
     return best_text, best_sim, prompt_topk
 
 
-def optimize_prompt(model, preprocess, tokenizer, args, device, target_images=None, target_prompts=None, ori_prompt=None,
+def optimize_prompt(model, preprocess, tokenizer, args, device, target_images=None, target_prompts=None,
+                    ori_prompt=None,
                     forbidden_words=None, suffix_num=10, only_english_words=False, writer=None):
-
     # get target features
     all_target_features = get_target_feature(model, preprocess, tokenizer, device, target_images=target_images,
                                              target_prompts=target_prompts)
-    # get original prompt feature
-    with torch.no_grad():
-        text_input = tokenizer(
-            ori_prompt, padding=True, return_tensors="pt")
-        ori_feature = model.get_text_features(text_input.input_ids.to(device))
-        ori_feature = ori_feature / ori_feature.norm(p=2, dim=-1, keepdim=True)
 
     # whether deleting non-English words in search space
     if only_english_words:
@@ -271,7 +264,6 @@ def optimize_prompt(model, preprocess, tokenizer, args, device, target_images=No
                                           forbidden_words=forbidden_words,
                                           suffix_num=suffix_num,
                                           english_mask=english_mask,
-                                          ori_feature=ori_feature,
                                           writer=writer)
 
     return learned_prompt

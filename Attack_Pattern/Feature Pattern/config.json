@@ -1,0 +1,14 @@
+{
+    "token_num": 16,
+    "synonym_num": 5,
+    "sim_thres": 0.4,
+    "iter": 500,
+    "lr": 0.1,
+    "weight_decay": 0.1,
+    "print_step": 100,
+    "batch_size": 1,
+    "clip_model": "laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
+    "forbidden_words": "./Word2Vec/initial_sensitive_word.txt",
+    "target_path":"./reference_images/",
+    "output_dir": "./result/"
+}
